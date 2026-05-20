@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+mysql-connector-python
+python-dotenv
+pydantic
+python-multipart
+SQLAlchemy
+fastapi-mail
+passlib
+bcrypt
+cryptography
+email-validator
