@@ -1,12 +1,12 @@
 from app.db.connection import get_connection
 from app.utils.password import hash_password, verify_password
-
+from app.utils.jwt import crear_token
 import uuid
 
 
-# =========================
+
 # CREAR USUARIO
-# =========================
+
 def crear_usuario(usuario):
 
     conn = get_connection()
@@ -54,9 +54,10 @@ def crear_usuario(usuario):
     }
 
 
-# =========================
+
+
 # LOGIN
-# =========================
+
 def login_usuario(usuario):
 
     conn = get_connection()
@@ -78,9 +79,11 @@ def login_usuario(usuario):
     user = cursor.fetchone()
 
     cursor.close()
+
     conn.close()
 
     # USUARIO NO EXISTE
+
     if not user:
 
         return {
@@ -88,22 +91,44 @@ def login_usuario(usuario):
         }
 
     # VALIDAR PASSWORD
+
     password_valida = verify_password(
         usuario.contrasena,
         user["contrasena"]
     )
 
     # PASSWORD INCORRECTA
+
     if not password_valida:
 
         return {
             "error": "contraseña incorrecta"
         }
 
+ 
+    # CREAR TOKEN
+ 
+
+    token = crear_token({
+
+        "idUsuario": str(
+            uuid.UUID(
+                bytes=user["idUsuario"]
+            )
+        ),
+
+        "rol": user["rol"]
+    })
+
+
     # LOGIN CORRECTO
+ 
+
     return {
 
         "mensaje": "login correcto",
+
+        "token": token,
 
         "idUsuario": str(
             uuid.UUID(

@@ -3,9 +3,9 @@ from app.db.connection import get_connection
 import uuid
 
 
-# =========================
+
 # CREAR ADMIN
-# =========================
+
 def crear_admin(admin):
 
     conn = get_connection()

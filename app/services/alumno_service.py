@@ -3,9 +3,9 @@ from app.db.connection import get_connection
 import uuid
 
 
-# =========================
+
 # CREAR ALUMNO
-# =========================
+
 def crear_alumno(alumno):
 
     conn = get_connection()

@@ -8,7 +8,7 @@ from email import encoders
 def enviar_correo(destinatario, asunto, mensaje, ruta_archivo=None):
     print("📨 ENTRÓ A enviar_correo")
 
-    # 👇 AQUÍ VAN LOS PRINTS IMPORTANTES
+    #  AQUÍ VAN LOS PRINTS IMPORTANTES
     print("📨 ENVIANDO A:", destinatario)
     print("📨 ASUNTO:", asunto)
 
@@ -22,9 +22,9 @@ def enviar_correo(destinatario, asunto, mensaje, ruta_archivo=None):
 
     msg.attach(MIMEText(mensaje, "plain"))
 
-    # 📎 Adjuntar archivo si existe
+    #  Adjuntar archivo si existe
     if ruta_archivo and os.path.exists(ruta_archivo):
-        print("📎 Adjuntando archivo:", ruta_archivo)  # 👈 útil también
+        print(" Adjuntando archivo:", ruta_archivo)  # 👈 útil también
 
         with open(ruta_archivo, "rb") as archivo:
             part = MIMEBase("application", "octet-stream")

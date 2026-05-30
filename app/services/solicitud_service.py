@@ -1,18 +1,29 @@
-from fastapi import Form, File, UploadFile
-from app.db.connection import get_connection
-from datetime import date, timedelta
-from app.utils.email import enviar_correo
+from fastapi import Form, HTTPException
 from fastapi import BackgroundTasks
+
+from app.db.connection import get_connection
+from app.utils.email import enviar_correo
+
+from app.services.pdf_services import (
+    extraer_datos_nss,
+    extraer_datos_vigencia
+)
+
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+from datetime import date, timedelta
 
 import uuid
 import os
-import shutil
 import mysql.connector
+
 
 
 # =========================
 # CARPETAS
 # =========================
+
 UPLOAD_CONSTANCIAS = "app/uploads/constancias"
 UPLOAD_NSS = "app/uploads/nss"
 UPLOAD_SEGUROS = "app/uploads/seguros"
@@ -33,18 +44,17 @@ os.makedirs(
 )
 
 
+
 # =========================
 # CREAR SOLICITUD
 # =========================
+
 async def crear_solicitud(
     id_usuario,
     constancia,
     nss
 ):
 
-    # =========================
-    # VALIDAR UUID
-    # =========================
     try:
 
         id_usuario_bytes = uuid.UUID(
@@ -57,9 +67,6 @@ async def crear_solicitud(
             "error": "UUID inválido"
         }
 
-    # =========================
-    # VALIDAR PDF
-    # =========================
     if constancia.content_type != "application/pdf":
 
         return {
@@ -72,29 +79,16 @@ async def crear_solicitud(
             "error": "El NSS debe ser PDF"
         }
 
-    # =========================
-    # CONEXIÓN
-    # =========================
     conn = get_connection()
     cursor = conn.cursor()
 
     try:
 
-        # =========================
-        # UUID SOLICITUD
-        # =========================
         id_solicitud = uuid.uuid4().bytes
 
-        # =========================
-        # NOMBRES ÚNICOS
-        # =========================
         nombre_constancia = f"{uuid.uuid4()}.pdf"
-
         nombre_nss = f"{uuid.uuid4()}.pdf"
 
-        # =========================
-        # RUTAS
-        # =========================
         ruta_constancia = os.path.join(
             UPLOAD_CONSTANCIAS,
             nombre_constancia
@@ -105,35 +99,24 @@ async def crear_solicitud(
             nombre_nss
         )
 
-        # =========================
-        # GUARDAR CONSTANCIA
-        # =========================
         with open(
             ruta_constancia,
             "wb"
         ) as buffer:
 
-            shutil.copyfileobj(
-                constancia.file,
-                buffer
+            buffer.write(
+                await constancia.read()
             )
 
-        # =========================
-        # GUARDAR NSS
-        # =========================
         with open(
             ruta_nss,
             "wb"
         ) as buffer:
 
-            shutil.copyfileobj(
-                nss.file,
-                buffer
+            buffer.write(
+                await nss.read()
             )
 
-        # =========================
-        # INSERT SQL
-        # =========================
         sql = """
         INSERT INTO Solicitud
         (
@@ -165,15 +148,10 @@ async def crear_solicitud(
 
     except mysql.connector.Error as e:
 
-        # =========================
-        # BORRAR PDFs SI FALLA MYSQL
-        # =========================
         if os.path.exists(ruta_constancia):
-
             os.remove(ruta_constancia)
 
         if os.path.exists(ruta_nss):
-
             os.remove(ruta_nss)
 
         return {
@@ -187,7 +165,7 @@ async def crear_solicitud(
 
 
 
-   # =========================
+# =========================
 # OBTENER TODAS
 # =========================
 
@@ -226,68 +204,280 @@ def obtener_solicitudes():
 
     return solicitudes
 
+
+
 # =========================
-# ENTREGAR SEGURO (APROBACIÓN)
+# GENERAR PDF PREVIEW
 # =========================
 
-async def entregar_seguro(
+async def generar_preview_seguro(
+
     id_solicitud: str,
-    observacion: str,
-    archivo: UploadFile,
-    background_tasks: BackgroundTasks  # 👈 AGREGAR ESTE PARÁMETRO
+
+    observacion: str
+
 ):
 
-    ruta_archivo = None
+    conn = None
+    cursor = None
 
     try:
-        id_solicitud_bytes = uuid.UUID(id_solicitud).bytes
+
+        id_solicitud_bytes = uuid.UUID(
+            id_solicitud
+        ).bytes
 
         conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
+
+        cursor = conn.cursor(
+            dictionary=True
+        )
 
         sql_usuario = """
-            SELECT 
-                s.idUsuario,
-                u.correo
-            FROM Solicitud s
-            INNER JOIN Usuario u
-                ON s.idUsuario = u.idUsuario
-            WHERE s.idSolicitud = %s
+        SELECT 
+            s.idUsuario,
+            s.rutaNss,
+            s.rutaConstancia,
+
+            u.correo,
+            u.nomCompleto,
+            u.numControl,
+
+            a.carrera,
+            a.semestre
+
+        FROM Solicitud s
+
+        INNER JOIN Usuario u
+            ON s.idUsuario = u.idUsuario
+
+        INNER JOIN Alumno a
+            ON u.idUsuario = a.idUsuario
+
+        WHERE s.idSolicitud = %s
         """
 
-        cursor.execute(sql_usuario, (id_solicitud_bytes,))
+        cursor.execute(
+            sql_usuario,
+            (id_solicitud_bytes,)
+        )
+
         solicitud = cursor.fetchone()
 
         if not solicitud:
-            return {"error": "Solicitud no encontrada"}
 
-        correo = solicitud["correo"]
-        id_usuario = solicitud["idUsuario"]
+            return {
+                "error": "Solicitud no encontrada"
+            }
 
-        sql_validar = """
-        SELECT fechaEntrega
-        FROM Solicitud
-        WHERE idUsuario = %s
-        AND estado = 'aprobada'
-        ORDER BY fechaEntrega DESC
-        LIMIT 1
-        """
+        datos_nss = extraer_datos_nss(
+            solicitud["rutaNss"]
+        )
 
-        cursor.execute(sql_validar, (id_usuario,))
-        ultima_aprobada = cursor.fetchone()
-
-        if ultima_aprobada and ultima_aprobada["fechaEntrega"]:
-            fecha_entrega = ultima_aprobada["fechaEntrega"]
-            fecha_limite = fecha_entrega + timedelta(days=180)
-
-            if date.today() < fecha_limite:
-                return {"error": "El alumno ya tiene un seguro vigente"}
+        datos_vigencia = extraer_datos_vigencia(
+            solicitud["rutaConstancia"]
+        )
 
         nombre_archivo = f"{uuid.uuid4()}.pdf"
-        ruta_archivo = os.path.join(UPLOAD_SEGUROS, nombre_archivo)
 
-        with open(ruta_archivo, "wb") as buffer:
-            shutil.copyfileobj(archivo.file, buffer)
+        ruta_archivo = os.path.join(
+            UPLOAD_SEGUROS,
+            nombre_archivo
+        )
+
+        pdf = canvas.Canvas(
+            ruta_archivo,
+            pagesize=letter
+        )
+
+        y = 750
+
+        pdf.setFont(
+            "Helvetica-Bold",
+            16
+        )
+
+        pdf.drawString(
+            120,
+            y,
+            "CONSTANCIA DE SEGURO FACULTATIVO"
+        )
+
+        y -= 60
+
+        pdf.setFont(
+            "Helvetica",
+            12
+        )
+
+        pdf.drawString(
+            50,
+            y,
+            f"Nombre: {solicitud['nomCompleto']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"Numero de Control: {solicitud['numControl']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"Carrera: {solicitud['carrera']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"Semestre: {solicitud['semestre']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"NSS: {datos_nss['nss']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"CURP: {datos_nss['curp']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"Clinica: {datos_vigencia['clinica']}"
+        )
+
+        y -= 30
+
+        pdf.drawString(
+            50,
+            y,
+            f"Vigencia: {datos_vigencia['vigencia']}"
+        )
+
+        y -= 50
+
+        pdf.setFont(
+            "Helvetica-Bold",
+            12
+        )
+
+        pdf.drawString(
+            50,
+            y,
+            "Observacion:"
+        )
+
+        y -= 30
+
+        pdf.setFont(
+            "Helvetica",
+            12
+        )
+
+        pdf.drawString(
+            50,
+            y,
+            observacion
+        )
+
+        pdf.save()
+
+        return {
+
+            "message": "Preview generado",
+
+            "rutaSeguro": ruta_archivo
+        }
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
+
+    finally:
+
+        if cursor:
+            cursor.close()
+
+        if conn:
+            conn.close()
+
+
+
+# =========================
+# ENTREGAR SEGURO
+# =========================
+
+async def entregar_seguro(
+
+    id_solicitud: str,
+
+    observacion: str,
+
+    ruta_seguro: str,
+
+    background_tasks: BackgroundTasks
+
+):
+
+    conn = None
+    cursor = None
+
+    try:
+
+        id_solicitud_bytes = uuid.UUID(
+            id_solicitud
+        ).bytes
+
+        conn = get_connection()
+
+        cursor = conn.cursor(
+            dictionary=True
+        )
+
+        sql_usuario = """
+        SELECT 
+            s.idUsuario,
+            u.correo
+        FROM Solicitud s
+
+        INNER JOIN Usuario u
+            ON s.idUsuario = u.idUsuario
+
+        WHERE s.idSolicitud = %s
+        """
+
+        cursor.execute(
+            sql_usuario,
+            (id_solicitud_bytes,)
+        )
+
+        solicitud = cursor.fetchone()
+
+        if not solicitud:
+
+            return {
+                "error": "Solicitud no encontrada"
+            }
 
         sql = """
         UPDATE Solicitud
@@ -298,37 +488,62 @@ async def entregar_seguro(
         WHERE idSolicitud = %s
         """
 
-        cursor.execute(sql, (
-            "aprobada",
-            observacion,
-            ruta_archivo,
-            id_solicitud_bytes
-        ))
+        cursor.execute(
+
+            sql,
+
+            (
+                "aprobada",
+                observacion,
+                ruta_seguro,
+                id_solicitud_bytes
+            )
+        )
 
         conn.commit()
-        
-        print("🔥 VOY A PROGRAMAR EL ENVÍO DE CORREO")
-        
-        # 👇 ENVIAR CORREO EN SEGUNDO PLANO (NO esperar a que termine)
-        background_tasks.add_task(
-            enviar_correo,
-            correo,
-            "Seguro aprobado",
-            f"Tu seguro ha sido aprobado.\nObservación: {observacion}",
-            ruta_archivo
-        )
-        
-        print("✅ CORREO PROGRAMADO - La respuesta se enviará al frontend inmediatamente")
 
-        return {"message": "Seguro entregado"}
+        background_tasks.add_task(
+
+            enviar_correo,
+
+            solicitud["correo"],
+
+            "Seguro aprobado",
+
+            f"""
+Tu seguro ha sido aprobado.
+
+Observación:
+{observacion}
+""",
+
+            ruta_seguro
+        )
+
+        return {
+            "message": "Seguro enviado correctamente"
+        }
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
 
     finally:
-        cursor.close()
-        conn.close()
+
+        if cursor:
+            cursor.close()
+
+        if conn:
+            conn.close()
+
+
 
 # =========================
-# ACTUALIZAR SOLICITUD (RECHAZO)
+# ACTUALIZAR SOLICITUD
 # =========================
+
 def actualizar_solicitud(id_solicitud, solicitud):
 
     try:
@@ -351,13 +566,11 @@ def actualizar_solicitud(id_solicitud, solicitud):
 
     try:
 
-        # =========================
-        # OBTENER CORREO
-        # =========================
         sql_correo = """
         SELECT u.correo
         FROM Solicitud s
-        INNER JOIN Usuario u ON s.idUsuario = u.idUsuario
+        INNER JOIN Usuario u
+            ON s.idUsuario = u.idUsuario
         WHERE s.idSolicitud = %s
         """
 
@@ -374,9 +587,6 @@ def actualizar_solicitud(id_solicitud, solicitud):
                 "error": "Solicitud no encontrada"
             }
 
-        # =========================
-        # UPDATE
-        # =========================
         sql = """
         UPDATE Solicitud
         SET estado = %s,
@@ -403,50 +613,19 @@ def actualizar_solicitud(id_solicitud, solicitud):
 
         conn.commit()
 
-        print("✅ SOLICITUD ACTUALIZADA")
+        enviar_correo(
 
-        # =========================
-        # CORREO
-        # =========================
-        try:
+            datos["correo"],
 
-            print("🔥 VOY A ENVIAR CORREO RECHAZO")
+            "Solicitud rechazada",
 
-            print(
-                "📨 DESTINATARIO:",
-                datos["correo"]
-            )
-
-            print(
-                "📝 OBSERVACIÓN:",
-                solicitud.observacion
-            )
-
-            enviado = enviar_correo(
-
-                datos["correo"],
-
-                "Solicitud rechazada",
-
-                f"""
+            f"""
 Tu solicitud fue rechazada.
 
 Observación:
 {solicitud.observacion}
 """
-            )
-
-            print(
-                "✅ RESULTADO ENVÍO:",
-                enviado
-            )
-
-        except Exception as e:
-
-            print(
-                "❌ Error enviando correo:",
-                str(e)
-            )
+        )
 
         return {
             "message": "Solicitud actualizada"
@@ -461,12 +640,12 @@ Observación:
     finally:
 
         cursor.close()
-
         conn.close()
 
 
+
 # =========================
-# OBTENER APROBADAS
+# APROBADAS
 # =========================
 
 def obtener_aprobadas():
@@ -505,13 +684,15 @@ def obtener_aprobadas():
     return solicitudes
 
 
+
 # =========================
-# OBTENER APROBADAS
+# RECHAZADAS
 # =========================
 
 def obtener_rechazadas():
 
     conn = get_connection()
+
     cursor = conn.cursor(dictionary=True)
 
     sql = """
@@ -535,6 +716,7 @@ def obtener_rechazadas():
     """
 
     cursor.execute(sql)
+
     solicitudes = cursor.fetchall()
 
     cursor.close()
@@ -547,9 +729,7 @@ def obtener_rechazadas():
 # =========================
 # HISTORIAL
 # =========================
-# =========================
-# HISTORIAL
-# =========================
+
 def obtener_historial():
 
     conn = get_connection()

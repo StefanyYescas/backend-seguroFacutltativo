@@ -6,7 +6,7 @@ load_dotenv()
 
 def get_connection():
 
-    print(os.getenv("DB_HOST"))  # 👈 AQUÍ
+    print(os.getenv("DB_HOST"))  
     return mysql.connector.connect(
         host=os.getenv("DB_HOST"),
         user=os.getenv("DB_USER"),

@@ -11,22 +11,25 @@ from app.services.usuario_service import (
 )
 
 
+
 router = APIRouter()
 
 
-# =========================
+
 # CREAR USUARIO
-# =========================
+
 @router.post("/crear")
 def crear(usuario: UsuarioCreate):
 
     return crear_usuario(usuario)
 
 
-# =========================
+
 # LOGIN
-# =========================
+
 @router.post("/login")
 def login(usuario: UsuarioLogin):
+
+
 
     return login_usuario(usuario)

@@ -11,9 +11,9 @@ from app.services.admin_service import (
 router = APIRouter()
 
 
-# =========================
+
 # CREAR ADMIN
-# =========================
+
 @router.post("/crear")
 def crear(admin: AdminCreate):
 

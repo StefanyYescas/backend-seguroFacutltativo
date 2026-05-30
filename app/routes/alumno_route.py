@@ -11,9 +11,9 @@ from app.services.alumno_service import (
 router = APIRouter()
 
 
-# =========================
+
 # CREAR ALUMNO
-# =========================
+
 @router.post("/crear")
 def crear(alumno: AlumnoCreate):
 
