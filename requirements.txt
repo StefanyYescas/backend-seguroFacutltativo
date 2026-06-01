@@ -10,3 +10,6 @@ passlib
 bcrypt
 cryptography
 email-validator
+python-jose
+pdfplumber
+reportlab
