@@ -76,7 +76,10 @@ def crear_usuario(usuario):
     conn.close()
 
     return {
-        "mensaje": "usuario creado"
+        "mensaje": "usuario creado",
+        "idUsuario": str(
+            uuid.UUID(bytes=id_usuario)
+        )
     }
 
 
@@ -220,6 +223,14 @@ def login_paso1(data):
                 "error": "contraseña incorrecta"
             }
 
+
+        # VALIDAR ROL SEGÚN TAB
+
+        if user["rol"] != data.rol:
+
+            return {
+                "error": f"acceso no autorizado para el rol {data.rol}"
+            }
 
         # VALIDAR DOMINIO INSTITUCIONAL
 

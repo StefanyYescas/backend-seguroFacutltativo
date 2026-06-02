@@ -24,6 +24,7 @@ class UsuarioLogin(BaseModel):
 class Paso1Request(BaseModel):
     numControl: str
     contrasena: str
+    rol: str
 
 
 
