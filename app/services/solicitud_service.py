@@ -177,8 +177,8 @@ def obtener_solicitudes():
 
     sql = """
     SELECT
-        BIN_TO_UUID(idSolicitud) AS idSolicitud,
-        BIN_TO_UUID(idUsuario) AS idUsuario,
+        idSolicitud,
+        idUsuario,
         fechaSolicitud,
         fechaEntrega,
         estado,
@@ -656,8 +656,8 @@ def obtener_aprobadas():
 
     sql = """
     SELECT
-        BIN_TO_UUID(idSolicitud) AS idSolicitud,
-        BIN_TO_UUID(idUsuario) AS idUsuario,
+        idSolicitud,
+        idUsuario,
         fechaSolicitud,
         fechaEntrega,
         estado,
@@ -697,8 +697,8 @@ def obtener_rechazadas():
 
     sql = """
     SELECT
-        BIN_TO_UUID(idSolicitud) AS idSolicitud,
-        BIN_TO_UUID(idUsuario) AS idUsuario,
+        idSolicitud,
+        idUsuario,
         fechaSolicitud,
         fechaEntrega,
         estado,
@@ -738,8 +738,8 @@ def obtener_historial():
 
     sql = """
     SELECT
-        BIN_TO_UUID(idSolicitud) AS idSolicitud,
-        BIN_TO_UUID(idUsuario) AS idUsuario,
+        idSolicitud,
+        idUsuario,
         fechaSolicitud,
         fechaEntrega,
         estado,
